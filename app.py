@@ -1,6 +1,8 @@
 from flask import Flask, render_template, request, redirect, session, url_for, jsonify, flash
 from flask_socketio import SocketIO, join_room, leave_room, emit
 from werkzeug.security import generate_password_hash, check_password_hash
+import os
+
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'change_this_super_secret_key'  # Seriously, change it or everyone chats as you
