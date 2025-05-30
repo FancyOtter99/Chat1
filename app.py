@@ -29,6 +29,21 @@ def redis_set_add(key, member):
     # Store sets as Redis sets for better performance
     redis_client.sadd(key, member)
 
+def cleanup_expired_groups():
+    keys = redis_client.keys('group_cleanup:*')
+    for key in keys:
+        group_name = key.split(':')[1]
+        # If the cleanup key still exists, TTL not expired yet, skip
+        if redis_client.exists(key):
+            continue
+        # Otherwise, remove group from 'groups' set and delete all keys just in case
+        redis_client.srem('groups', group_name)
+        redis_client.delete(f'group:{group_name}:password')
+        redis_client.delete(f'group:{group_name}:members')
+        redis_client.delete(f'group:{group_name}:allowed_users')
+        redis_client.delete(key)
+
+
 def redis_set_remove(key, member):
     redis_client.srem(key, member)
 
@@ -155,6 +170,31 @@ def logout():
 
 # Socket.IO events
 
+@socketio.on('leave')
+def handle_leave(data):
+    room = data.get('room')
+    username = session.get('username')
+    if not username or not room:
+        return
+
+    leave_room(room)
+    redis_client.srem(f'group:{room}:members', username)
+    emit('receive_message', {'username': 'System', 'message': f'{username} left {room}.'}, room=room)
+
+    # Check if group is now empty
+    members_count = redis_client.scard(f'group:{room}:members')
+    if members_count == 0:
+        # Set TTL 60 seconds on all group keys
+        redis_client.expire(f'group:{room}:password', 60)
+        redis_client.expire(f'group:{room}:members', 60)
+        redis_client.expire(f'group:{room}:allowed_users', 60)
+        
+        # Also expire group name from 'groups' set by delaying removal:
+        # Redis sets don't support expire on members, so we remove it after 60s with a scheduled cleanup
+        # We'll use a "delayed cleanup" key for this group:
+        redis_client.set(f'group_cleanup:{room}', '1', ex=60)
+
+
 @socketio.on('join')
 def handle_join(data):
     room = data.get('room')
@@ -170,18 +210,15 @@ def handle_join(data):
 
     join_room(room)
     redis_client.sadd(f'group:{room}:members', username)
+
+    # Cancel expiration if group keys were set to expire:
+    redis_client.persist(f'group:{room}:password')
+    redis_client.persist(f'group:{room}:members')
+    redis_client.persist(f'group:{room}:allowed_users')
+    redis_client.delete(f'group_cleanup:{room}')  # Cancel cleanup marker if exists
+
     emit('receive_message', {'username': 'System', 'message': f'{username} joined {room}.'}, room=room)
 
-@socketio.on('leave')
-def handle_leave(data):
-    room = data.get('room')
-    username = session.get('username')
-    if not username or not room:
-        return
-
-    leave_room(room)
-    redis_client.srem(f'group:{room}:members', username)
-    emit('receive_message', {'username': 'System', 'message': f'{username} left {room}.'}, room=room)
 
 @socketio.on('send_message')
 def handle_send_message(data):
