@@ -11,8 +11,8 @@ socketio = SocketIO(app)
 
 # Redis connection
 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-print(r.ping())  # Should print True if connection is successful
 redis_client = redis.from_url(redis_url, decode_responses=True)
+print(redis_client.ping())  # Should print True if connection is successful
 
 # Helper functions to convert sets and dicts to JSON strings for Redis
 
