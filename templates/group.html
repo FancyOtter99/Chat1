@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Group: {{ group_name }} - FancyOtter Chat</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <script src="//cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
+</head>
+<body>
+<header>
+  <h1>FancyOtter Chat</h1>
+  <button class="logout-btn" onclick="logout()">Logout</button>
+</header>
+<main>
+  <h2>Group Chat: {{ group_name }}</h2>
+  <div id="messages"></div>
+
+  <form id="messageForm">
+    <input type="text" id="messageInput" autocomplete="off" placeholder="Type your message here..." />
+    <button type="submit" class="primary-btn">Send</button>
+  </form>
+
+  <button class="primary-btn" id="backBtn">Back to Browse</button>
+</main>
+
+<script>
+  const socket = io();
+  const room = "{{ group_name }}";
+  const username = "{{ username }}";
+
+  // Join the group room
+  socket.emit('join', { room });
+
+  const messages = document.getElementById('messages');
+  const messageForm = document.getElementById('messageForm');
+  const messageInput = document.getElementById('messageInput');
+  const backBtn = document.getElementById('backBtn');
+
+  socket.on('receive_message', data => {
+    const div = document.createElement('div');
+    div.classList.add('message');
+    div.innerHTML = `<strong>${data.username}:</strong> ${data.message}`;
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+  });
+
+  messageForm.addEventListener('submit', e => {
+    e.preventDefault();
+    const msg = messageInput.value.trim();
+    if (msg.length === 0) return;
+    socket.emit('send_message', { room, message: msg });
+    messageInput.value = '';
+  });
+
+let isLeavingGroup = false;
+
+backBtn.addEventListener('click', () => {
+  isLeavingGroup = true;
+  fetch(`/leave_group/${room}`, { method: 'POST' })
+    .then(() => {
+      socket.emit('leave', { room });
+      window.location.href = '/browse';
+    });
+});
+
+// Only logout if the user is not navigating to another page
+window.addEventListener('beforeunload', (e) => {
+  if (!isLeavingGroup) {
+    navigator.sendBeacon('/logout');
+  }
+});
+
+  function logout() {
+    fetch('/logout').then(() => window.location.href = '/login');
+  }
+</script>
+</body>
+</html>
